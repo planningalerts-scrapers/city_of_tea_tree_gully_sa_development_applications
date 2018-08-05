@@ -11,7 +11,7 @@ const sqlite3 = require("sqlite3");
 const moment = require("moment");
 sqlite3.verbose();
 const DevelopmentApplicationMainUrl = "https://www.ecouncil.teatreegully.sa.gov.au/eservice/dialog/daEnquiryInit.do?nodeNum=131612";
-const DevelopmentApplicationSearchUrl = "https://www.ecouncil.teatreegully.sa.gov.au/eservice/dialog/daEnquiry.do?number=&lodgeRangeType=on&dateFrom={0}&dateTo={1}&detDateFromString=&detDateToString=&streetName=&suburb=0&unitNum=&houseNum=0%0D%0A%09%09%09%09%09&planNumber=&strataPlan=&lotNumber=&propertyName=&searchMode=A&submitButton=Search";
+const DevelopmentApplicationSearchUrl = "https://www.ecouncil.teatreegully.sa.gov.au/eservice/dialog/daEnquiry.do?number=&lodgeRangeType=on&dateFrom={0}&dateTo={1}&detDateFromString=&detDateToString=&streetName=&suburb=0&unitNum=&houseNum=0%0D%0A%09%09%09%09%09&searchMode=A&submitButton=Search";
 const CommentUrl = "mailto:customerservice@cttg.sa.gov.au";
 // Sets up an sqlite database.
 async function initializeDatabase() {
@@ -66,29 +66,38 @@ async function main() {
     let dateTo = encodeURIComponent(moment().format("DD/MM/YYYY"));
     let developmentApplicationSearchUrl = DevelopmentApplicationSearchUrl.replace(/\{0\}/g, dateFrom).replace(/\{1\}/g, dateTo);
     console.log(`Retrieving search results for: ${developmentApplicationSearchUrl}`);
-    let body = await request({ url: developmentApplicationSearchUrl, jar: jar });
+    let body = await request({ url: developmentApplicationSearchUrl, jar: jar }); // the cookie jar contains the JSESSIONID_live cookie
     let $ = cheerio.load(body);
     // Parse the search results.
-    for (let element of $("h4.non_table_headers").get()) {
-        let address = $(element).text().trim().replace(/\s\s+/g, " ");
+    for (let headerElement of $("h4.non_table_headers").get()) {
+        // Reduce multiple consecutive spaces in the address to a single space.
+        let address = $(headerElement).text().trim().replace(/\s\s+/g, " ");
+        // Remove unwanted suffixes from the address.  These appear after a dash.  Take care not
+        // to accidentally recognise any dashes in the house number as the start of a suffix (by
+        // starting the search for dashes after the state abbreviation, "SA").
+        let stateIndex = address.indexOf(" SA ");
+        if (stateIndex >= 0) {
+            let suffixIndex = address.indexOf(" - ", stateIndex);
+            if (suffixIndex >= 0)
+                address = address.substring(0, suffixIndex); // for example, removes " - Building Rules Application"
+        }
         let applicationNumber = "";
         let reason = "";
-        let receivedDate = "";
-        for (let subElement of $(element).next("div").get()) {
-            for (let pairElement of $(subElement).find("p.rowDataOnly").get()) {
-                let key = $(pairElement).children("span.key").text().trim();
-                let value = $(pairElement).children("span.inputField").text().trim();
+        let receivedDate = moment.invalid();
+        for (let divElement of $(headerElement).next("div").get()) {
+            for (let paragraphElement of $(divElement).find("p.rowDataOnly").get()) {
+                let key = $(paragraphElement).children("span.key").text().trim();
+                let value = $(paragraphElement).children("span.inputField").text().trim();
                 if (key === "Type of Work")
                     reason = value;
                 else if (key === "Application No.")
                     applicationNumber = value;
                 else if (key === "Date Lodged")
-                    receivedDate = value;
+                    receivedDate = moment(value, "D/MM/YYYY", true); // allows the leading zero of the day to be omitted
             }
         }
         // Ensure that at least an application number and address have been obtained.
         if (applicationNumber !== "" && address !== "") {
-            let parsedReceivedDate = moment(receivedDate, "D/MM/YYYY", true); // allows the leading zero of the day to be omitted
             await insertRow(database, {
                 applicationNumber: applicationNumber,
                 address: address,
@@ -96,7 +105,7 @@ async function main() {
                 informationUrl: DevelopmentApplicationMainUrl,
                 commentUrl: CommentUrl,
                 scrapeDate: moment().format("YYYY-MM-DD"),
-                receivedDate: parsedReceivedDate.isValid ? parsedReceivedDate.format("YYYY-MM-DD") : ""
+                receivedDate: receivedDate.isValid ? receivedDate.format("YYYY-MM-DD") : ""
             });
         }
     }
