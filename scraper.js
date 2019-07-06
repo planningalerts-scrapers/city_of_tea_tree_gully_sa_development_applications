@@ -17,7 +17,7 @@ async function initializeDatabase() {
     return new Promise((resolve, reject) => {
         let database = new sqlite3.Database("data.sqlite");
         database.serialize(() => {
-            database.run("create table if not exists [data] ([council_reference] text primary key, [address] text, [description] text, [info_url] text, [date_scraped] text, [date_received] text)");
+            database.run("create table if not exists [data] ([council_reference] text primary key, [address] text, [description] text, [info_url] text, [date_received] text, [date_scraped] text)");
             resolve(database);
         });
     });
@@ -31,8 +31,8 @@ async function insertRow(database, developmentApplication) {
             developmentApplication.address,
             developmentApplication.reason,
             developmentApplication.informationUrl,
-            developmentApplication.scrapeDate,
-            developmentApplication.receivedDate
+            developmentApplication.receivedDate,
+            developmentApplication.scrapeDate
         ], function (error, row) {
             if (error) {
                 console.error(error);
