@@ -7,3 +7,6 @@ package-lock.json
 
 # Ignore Visual Studio Code files.
 .vscode
+
+results_other.yml
+results_ruby.yml
